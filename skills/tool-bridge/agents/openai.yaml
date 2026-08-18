@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tool Bridge"
+  short_description: "Discover and use tools through a Tool Bridge gateway"
+  default_prompt: "Use $tool-bridge to discover and call the right tool for this task."
