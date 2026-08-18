@@ -1,6 +1,6 @@
 # Tool Bridge CLI reference
 
-Load this reference before the first Tool Bridge operation in a session and whenever discovery, authentication, or invocation fails.
+Load this reference before the first Tool Bridge operation in a session and whenever discovery, authentication, invocation, or feedback handling fails.
 
 ## Target configuration
 
@@ -89,14 +89,22 @@ Tool Bridge errors use `{code,message,retryable}`. Common meanings:
 - `rate_limited`: retry only when safe, using bounded backoff
 - `internal`: report the failure without exposing request secrets
 
-The CLI may attach known feedback to failed calls. Read the referenced item before changing the request:
+The CLI may attach known feedback to failed calls. Treat that hint as the first troubleshooting branch and read the referenced item before changing the request:
 
 ```sh
 tb feedback ls '<path>' --json
 tb feedback get '<path>' '<feedback-id>' --json
 ```
 
-Submit feedback only after authorization and only when it is reusable and non-sensitive:
+If a listed entry accurately explains the behavior or provides a validated workaround, vote it up promptly instead of submitting a duplicate:
+
+```sh
+tb feedback vote '<path>' '<feedback-id>' up --json
+```
+
+Use `down` only when current runtime evidence shows that an entry is incorrect or harmful. Do not downvote merely because an entry was irrelevant to the current task.
+
+When an abnormal call reveals a new reproducible issue or a validated resolution, submit feedback at the point of learning rather than waiting until the end of the task:
 
 ```sh
 tb feedback submit '<path>' \
@@ -105,4 +113,12 @@ tb feedback submit '<path>' \
   --json
 ```
 
-Never put credentials, personal data, customer payloads, or internal-only URLs in feedback.
+Before submitting:
+
+1. Run `tb feedback ls '<path>' --json` again to prevent duplicates.
+2. Keep the title to one concrete symptom or lesson.
+3. State the observed condition and verified workaround in the detail.
+4. Label an unresolved report as unresolved; do not present a guess as a fix.
+5. Remove credentials, personal data, customer payloads, and internal-only URLs.
+
+Feedback submission and voting require `call` permission on the target path. If the current task does not authorize gateway writes, draft the exact entry or vote and ask once for confirmation immediately. If permission is missing, report that fact and preserve the draft for an authorized user.

@@ -1,6 +1,6 @@
 # Tool Bridge Agent Skill
 
-Give a coding agent access to the tools, context, and devices exposed by a [Tool Bridge](https://github.com/TokenRollAI/tool-bridge) gateway. The skill teaches the agent to discover capabilities from live `~help`, inspect schemas, call the correct tool, and respect side-effect and credential boundaries.
+Give a coding agent access to the tools, context, and devices exposed by a [Tool Bridge](https://github.com/TokenRollAI/tool-bridge) gateway. The skill teaches the agent to discover capabilities from live `~help`, use feedback before and during troubleshooting, promptly contribute validated lessons, call the correct tool, and respect side-effect and credential boundaries.
 
 ## Install
 
@@ -41,6 +41,8 @@ Use Tool Bridge to inspect the deployment status. Do not make changes.
 ```
 
 The gateway's runtime description is always authoritative; this repository does not hard-code an instance URL, credential, or tool catalog.
+
+The feedback loop is deliberate: agents read relevant feedback before a call, consult it immediately after abnormal behavior, vote on useful existing guidance, and submit new non-sensitive findings when authorized.
 
 ## License
 
