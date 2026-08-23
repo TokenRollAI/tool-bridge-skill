@@ -42,10 +42,10 @@ tb help '<path>' --json
 
 `tb search` may be absent on gateways without a search capability. Fall back to `tree`, `ls`, and `help` rather than treating that as a gateway-wide failure.
 
-Node-level help is an index. For MCP, HTTP, and tool providers, request `<node>/<tool>` help to obtain the complete input schema. Important command fields are:
+Node-level help is an index; it lists the commands under a node. Request `<node>/<command>` help to obtain a single command's complete input schema. Important command fields are:
 
-- `path`: HTTP invocation path; also determines the CLI call form
-- `name`: tool or command name
+- `path`: the full command path, used verbatim as the call target
+- `name`: the command name
 - `inputSchema`: JSON Schema for the arguments object
 - `outputSchema` or `returns`: response contract when declared
 - `scope`: required permission
@@ -55,19 +55,16 @@ Node-level help is an index. For MCP, HTTP, and tool providers, request `<node>/
 
 Unknown optional fields are forward-compatible and should be ignored.
 
-## Invocation forms
+## Invocation form
 
-Use direct form when `cmds[].path` includes the tool segment:
+There is one call form. A command is a virtual leaf under its node, so `cmds[].path` is always the full command path. Pass it verbatim and send the arguments object as the request body:
 
 ```sh
 tb call 'docs/search/query' --args '{"q":"tool bridge"}' --json
+tb call 'system/status/get' --json
 ```
 
-Use envelope form when several commands share the node path:
-
-```sh
-tb call 'system/status' --tool get --args '{}' --json
-```
+Take the path from `cmds[].path` exactly; do not assemble it from the node kind or invent a command name. Identifiers in a path (each segment and the command name) are case-insensitive and normalized to lowercase.
 
 Arguments must be a JSON object. Inline JSON, `--args`, and `--args-file` are mutually exclusive. Prefer `--args-file` for long payloads:
 
@@ -83,7 +80,7 @@ Tool Bridge errors use `{code,message,retryable}`. Common meanings:
 
 - `not_found`: the path is absent or intentionally hidden from this identity
 - `permission_denied`: the visible operation lacks a required scope
-- `invalid_argument`: re-read tool-level help and compare the payload with `inputSchema`
+- `invalid_argument`: re-read command-level help and compare the payload with `inputSchema`
 - `conflict`: refresh state before deciding whether to try again
 - `unavailable`: upstream or gateway capability is temporarily unavailable
 - `rate_limited`: retry only when safe, using bounded backoff
