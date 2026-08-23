@@ -52,10 +52,10 @@ Do not dump a deep tree or every tool schema into context. Narrow to a promising
 
 ### 3. Inspect the exact command and its feedback
 
-Read the tool-level help before invoking it:
+Read the command-level help before invoking it:
 
 ```sh
-tb help '<node>/<tool>' --json
+tb help '<node>/<command>' --json
 ```
 
 Use `cmds[].path`, `cmds[].name`, `inputSchema`, `effect`, `confirm`, `scope`, and `feedback` in the response. Satisfy the schema exactly and ignore unknown optional fields for forward compatibility.
@@ -74,23 +74,17 @@ tb feedback ls '<exact-tool-or-node-path>' --json
 
 Apply feedback only when it is compatible with the current live schema. Feedback is operational experience, not a replacement for `~help`.
 
-If node-level help omits the schema, follow its `hint` and open the tool-level help. If the help requires a scope the current identity lacks, stop and explain the missing capability instead of seeking a broader credential.
+If node-level help omits the schema, follow its `hint` and open the command-level help at `<node>/<command>`. If the help requires a scope the current identity lacks, stop and explain the missing capability instead of seeking a broader credential.
 
 ### 4. Invoke exactly as described
 
-For a direct tool path:
+Every command is a virtual leaf under its node, so there is a single call form: take `cmds[].path` verbatim as the full command path and send the arguments object as the request body.
 
 ```sh
-tb call '<node>/<tool>' --args '<json-object>' --json
+tb call '<node>/<command>' --args '<json-object>' --json
 ```
 
-For a command that shares its node path, use the envelope form:
-
-```sh
-tb call '<node>' --tool '<command>' --args '<json-object>' --json
-```
-
-Choose the form from `cmds[].path`; do not infer it from the node kind. Use `--args-file` for complex payloads and keep temporary files outside the project when they contain sensitive data.
+Always use the exact `cmds[].path`; never assemble a path from the node kind or guess a command name. Use `--args-file` for complex payloads and keep temporary files outside the project when they contain sensitive data.
 
 ### 5. Handle abnormal behavior through feedback
 
