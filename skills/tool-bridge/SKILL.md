@@ -1,16 +1,15 @@
 ---
 name: tool-bridge
-description: Discover and invoke self-described tools through a Tool Bridge gateway, consume operational feedback, and promptly contribute reusable lessons with the tb CLI. Use when an agent needs to find an available organizational tool, inspect an HTBP/MCP/HTTP capability, query connected context, call a gateway tool, explore the visible tool tree, troubleshoot abnormal tool behavior, or read, submit, and vote on Tool Bridge feedback. Requires an authenticated Tool Bridge target.
+description: Discover and invoke self-described tools through a Tool Bridge gateway using the shortest safe tb CLI path, and use operational feedback when it materially affects a call. Use when an agent needs to find an available organizational tool, inspect an HTBP/MCP/HTTP capability, query connected context, call a gateway tool, explore the visible tool tree, or troubleshoot abnormal tool behavior. Requires an authenticated Tool Bridge target.
 ---
 
 # Tool Bridge
 
 Use the gateway's live descriptions as the source of truth. Never guess a path, tool name, argument schema, or capability from memory.
 
-## Guardrails
+## Safety boundaries
 
-- Prefer the `tb` CLI. Read [references/cli-reference.md](references/cli-reference.md) before the first gateway operation in a session or when a command fails.
-- Treat feedback as part of the normal call path: read relevant feedback before calling, consult it immediately when behavior is abnormal, and close the loop after learning something reusable.
+- Prefer the `tb` CLI. Read [references/cli-reference.md](references/cli-reference.md) only when target configuration or command syntax is unclear, a Context write/upload is needed, or a command fails.
 - Keep the secret key out of prompts, logs, command arguments, source files, and generated artifacts. Use an existing `tb login` profile or secret-injected `TB_SK` environment variable.
 - Use the least-privileged identity already provided for the task. Do not request an admin key merely because a path is hidden.
 - Treat `effect: write`, `effect: destructive`, and `confirm: true` as external mutations. Obtain explicit user confirmation unless the user already requested that exact mutation.
@@ -19,20 +18,27 @@ Use the gateway's live descriptions as the source of truth. Never guess a path, 
 - Do not automatically retry calls that may have side effects. Check the error's `retryable` signal and the command effect first.
 - Never publish credentials, customer data, private payloads, or unverified speculation as feedback. Prefer voting on an existing matching entry over creating a duplicate.
 
-## Workflow
+## Choose the shortest safe path
 
-### 1. Verify the target
+Reuse a target, full command path, and schema already verified during the current task while the selected profile/BaseURL, identity, and runtime contract remain unchanged. Re-verify after any of those changes, or when the gateway reports that the path or arguments are invalid.
 
-Check whether the CLI exists, then verify the configured target without exposing credentials:
+### Fast path: known read-only command
+
+Verify a target once per target/session, not before every call:
 
 ```sh
-command -v tb
 tb whoami --json
 ```
 
-If `tb` is missing, tell the user that Node.js 22+ and `@tool-bridge/cli` are required. Ask before installing a global package. If the target is missing or authentication is rejected, ask the user to configure a profile or inject `TB_BASE_URL` and `TB_SK`; do not ask them to paste a secret into chat when a secret-input mechanism is available.
+If the exact full command path, arguments schema, `effect: read`, and `confirm: false` are already known from the current runtime, call it directly. Do not add search, help, or feedback requests merely as ceremony:
 
-### 2. Discover the smallest relevant surface
+```sh
+tb call '<node>/<command>' --args '<json-object>' --json
+```
+
+If `tb` is missing, tell the user that Node.js 22+ and `@tool-bridge/cli` are required. Ask before installing a global package. If authentication fails, ask the user to configure a profile or inject `TB_BASE_URL` and `TB_SK`; do not ask them to paste a secret into chat when a secret-input mechanism is available.
+
+### Discovery path: unknown capability or contract
 
 Start with search when the desired capability is known:
 
@@ -48,58 +54,45 @@ tb ls '<path>' --json
 tb help '<path>' --json
 ```
 
-Do not dump a deep tree or every tool schema into context. Narrow to a promising node first.
+JSON search results already carry `items[].tool.inputSchema`, `effect`, and `confirm`. If one result is unambiguous and contains enough information for a read-only call, use its exact `<items[].path>/<items[].tool.name>` pair and call it without another help request.
 
-### 3. Inspect the exact command and its feedback
-
-Read the command-level help before invoking it:
+Open command-level help only when a required field is missing, results are ambiguous, the command is unfamiliar or failure-prone, or the operation may mutate state:
 
 ```sh
 tb help '<node>/<command>' --json
 ```
 
-Use `cmds[].path`, `cmds[].name`, `inputSchema`, `effect`, `confirm`, `scope`, and `feedback` in the response. Satisfy the schema exactly and ignore unknown optional fields for forward compatibility.
-
-Reading embedded feedback is mandatory. For every relevant entry, fetch its detail before calling:
+Use `cmds[].path`, `inputSchema`, `effect`, `confirm`, and `scope` from live help. Satisfy the schema exactly and ignore unknown optional fields for forward compatibility. If help already embeds feedback that is clearly relevant, fetch only the entry needed to decide the call:
 
 ```sh
 tb feedback get '<exact-tool-or-node-path>' '<feedback-id>' --json
 ```
 
-For an unfamiliar or failure-prone path, list all current visible feedback before the first call:
+For an unfamiliar or failure-prone path, feedback can be checked before calling:
 
 ```sh
 tb feedback ls '<exact-tool-or-node-path>' --json
 ```
 
-Apply feedback only when it is compatible with the current live schema. Feedback is operational experience, not a replacement for `~help`.
+Do not list feedback on every normal read call, and do not fetch every visible entry. Feedback is operational experience, not a replacement for live schema.
 
-If node-level help omits the schema, follow its `hint` and open the command-level help at `<node>/<command>`. If the help requires a scope the current identity lacks, stop and explain the missing capability instead of seeking a broader credential.
+For any write, destructive, or `confirm: true` operation, inspect command help and apply the user's authorization boundary before calling.
 
-### 4. Invoke exactly as described
+### Recovery path: abnormal behavior
 
-Every command is a virtual leaf under its node, so there is a single call form: take `cmds[].path` verbatim as the full command path and send the arguments object as the request body.
-
-```sh
-tb call '<node>/<command>' --args '<json-object>' --json
-```
-
-Always use the exact `cmds[].path`; never assemble a path from the node kind or guess a command name. Use `--args-file` for complex payloads and keep temporary files outside the project when they contain sensitive data.
-
-### 5. Handle abnormal behavior through feedback
-
-Treat errors, timeouts, schema-valid but surprising results, and upstream inconsistencies as abnormal behavior. Before changing the request or retrying:
+Treat errors, timeouts, schema-valid but surprising results, and upstream inconsistencies as abnormal behavior:
 
 1. Preserve the non-sensitive error code, message, path, and relevant conditions.
-2. Run `tb feedback ls` on the exact path immediately.
-3. Read matching entries with `tb feedback get` and try a documented workaround only when it is safe and consistent with live help.
-4. Avoid duplicate reports. If an existing entry was useful, promptly vote it up when gateway feedback writes are authorized.
-5. If the issue or validated resolution is new, promptly submit concise feedback at the point of learning. If feedback writes are not already authorized, prepare the exact title and detail and ask once for confirmation instead of postponing the decision until the end.
+2. Inspect any `hint` and summarized `feedback` already attached by the failed `tb call`; fetch the single most relevant entry with `tb feedback get`.
+3. Run `tb feedback ls` only when the failure carried no useful entry, or before submitting a new entry to avoid duplicates.
+4. Try a documented workaround only when it matches live schema and the call is safe to retry. Treat timed-out mutations as outcome unknown; do not retry them.
 
-Do not claim a workaround is verified until a safe retry or other evidence confirms it. An unresolved but reproducible issue may be submitted if the detail clearly labels it unresolved and gives enough non-sensitive conditions to recognize it.
+Keep recovery bounded: normally make at most one workaround retry. Do not claim a workaround is verified until that retry or other evidence confirms it.
 
-### 6. Validate and report
+Feedback writes are not part of the happy path. After securing the task result, vote for a useful existing entry or submit a verified new lesson only when gateway writes are already authorized and doing so adds value. Otherwise mention a draft only when it would materially help the user.
+
+## Validate and report
 
 Check the returned data against the task, not merely the process exit code. Summarize which gateway path and tool were used, the relevant result, and any limitation or partial failure. Never include the secret key.
 
-Report whether feedback was consulted, whether it affected the call, and whether a matching entry was voted on, newly submitted, or left as a draft pending authorization.
+Mention feedback only when it changed recovery behavior, was written, or remains a valuable draft requiring authorization.
