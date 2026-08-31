@@ -1,6 +1,6 @@
 # Tool Bridge CLI reference
 
-Load this reference when target configuration or command syntax is unclear, a Context write/upload is needed, or discovery, authentication, invocation, or feedback handling fails. It is not a required preflight for a known read-only call.
+Load this reference when target configuration or command syntax is unclear, a Context write/upload is needed, a durable device operation or Store object must be inspected or managed, or discovery, authentication, invocation, or feedback handling fails. It is not a required preflight for a known read-only call.
 
 ## Target configuration
 
@@ -61,6 +61,7 @@ Node-level help is an index; it lists the commands under a node. Request `<node>
 - `scope`: required permission
 - `effect`: typically `read`, `write`, or `destructive`
 - `confirm`: whether the user must confirm before the call
+- `delivery`: for device commands, the supported channels — `realtime`, `mailbox`, or `both`; absent means realtime-only
 - `feedback`: high-value operational notes from prior users
 
 Unknown optional fields are forward-compatible and should be ignored.
@@ -96,6 +97,52 @@ Repeated `--arg key=value` builds a flat object. It parses only `true`/`false` a
 Prefer `--args-file` for long payloads. Keep sensitive temporary files outside the project and remove them when no longer needed.
 
 Do not reuse a failed write or destructive call automatically. A timeout can leave the remote outcome unknown.
+
+## Device delivery and durable operations
+
+`tb call` accepts a per-call delivery policy for device-backed commands:
+
+```sh
+tb call '<node>/<command>' --args '<json-object>' --delivery fallback --json
+tb call '<node>/<command>' --args '<json-object>' --delivery mailbox --ttl 3600 --idempotency-key '<key>' --json
+```
+
+- `--delivery` is `realtime` (default), `mailbox` (enqueue a durable operation), or `fallback` (gateway decides).
+- `--ttl <seconds>` bounds how long a queued operation stays deliverable; `--idempotency-key <key>` makes a retried enqueue reuse the same operation. Both require `--delivery mailbox` or `fallback`.
+- The command's metadata `delivery` (`realtime`/`mailbox`/`both`, absent = realtime-only) limits which policies can succeed; the flag never expands a command's capability.
+
+`fallback` semantics are owned by the gateway: for a `both` command it attempts realtime and enqueues only when the gateway can prove the call was never dispatched to the device. A completed realtime call — success or business error — never enqueues. An outcome-unknown send never enqueues either and returns `retryable: false`; do not send a manual follow-up enqueue.
+
+A `200` response carries the command result with header `x-tb-delivery: realtime`. A `202` carries the operation detail with `x-tb-delivery: mailbox`; in `--json` mode the CLI prints that operation object, in human mode it prints `queued <operationId> (queued)`.
+
+Inspect and manage operations with the `tb device` commands, scoped to the caller's visibility:
+
+```sh
+tb device ls --json
+tb device op ls '<device-id>' --state queued --json
+tb device op get '<device-id>' '<operation-id>' --json
+tb device op cancel '<device-id>' '<operation-id>' --json
+```
+
+Operation states: `queued`, `claimed`, then a terminal `succeeded`, `rejected`, `failed`, `result_unknown`, `cancelled`, or `expired`. Interpretation rules:
+
+- Cancelling a `queued` operation terminates it before execution; cancelling a `claimed` one only records the request — the device stops cooperatively, and side effects are not proven stopped.
+- `result_unknown`, and `expired` with `executionMayHaveOccurred: true`, mean the device may have executed the command without a recoverable result. Never re-enqueue or re-call on that basis alone.
+- Claiming, renewing, and completing operations are the device runtime's protocol. A calling agent reads state with `op get` at most when the current task needs it; there is no fixed polling loop in the default flow.
+
+## Store objects
+
+Deployment-level objects live in the default Store and appear in results as stable `store://default/...` URIs. Owner-scoped commands:
+
+```sh
+tb store list --json
+tb store stat 'store://default/<key>' --json
+tb store get 'store://default/<key>' --out '<local-file>'
+tb store upload '<local-file>' --json
+tb store rm 'store://default/<key>' --json
+```
+
+`tb store share 'store://default/<key>' --json` creates a short-lived revocable bearer link for an external audience; `tb store revoke-share '<share-id>'` revokes it. The share output is a secret: deliver it to the user and keep it out of logs, feedback, and generated artifacts. Persist only the `store://` URI itself.
 
 ## Context writes and uploads
 
