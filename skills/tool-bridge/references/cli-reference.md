@@ -1,215 +1,89 @@
-# Tool Bridge CLI reference
+# CLI, target selection, and discovery
 
-Load this reference when target configuration or command syntax is unclear, a Context write/upload is needed, a durable device operation or Store object must be inspected or managed, or discovery, authentication, invocation, or feedback handling fails. It is not a required preflight for a known read-only call.
+Read for connection setup, search refinement, pagination, or argument syntax. Device delivery, files, administration, and failure recovery have separate references linked from SKILL.md.
 
-## Target configuration
+## Connection and local help
 
-The CLI resolves the gateway in this order:
+Use `tb --help` or `tb <group> <command> --help` to inspect the installed CLI without contacting a gateway. `tb help '<path>' --json` instead requests live gateway help.
 
-1. Explicit `--base-url` and `--sk` flags
-2. `TB_BASE_URL` and `TB_SK`
-3. The selected local profile created by `tb login`
-
-Avoid `--sk` because it can enter shell history and process listings. Prefer an existing profile for interactive use and secret-injected environment variables for automation.
-
-Configure an interactive profile:
+The CLI resolves each target field from explicit flags, then `TB_BASE_URL` / `TB_SK`, then the selected login profile. Avoid `--sk`: it exposes the key in argv. When selecting a different gateway, select matching credentials too; do not combine an old injected key with a new URL accidentally.
 
 ```sh
 tb login --base-url https://gateway.example.com
 tb whoami --json
 ```
 
-Within one continuous task, reuse a successful `whoami` result while the selected profile/BaseURL and identity remain unchanged. Do not run it before every call.
+For login automation, inject `TB_SK` through the environment; `login` has no secret-stdin option. The user can also log in from their own terminal, but its interactive SK prompt currently echoes input, so do not capture that interaction in an agent transcript. Do not ask for keys in chat. Verify `authenticated` once, then reuse the target until target/profile/identity changes: `whoami` can exit successfully with `authenticated: false`, and authentication does not prove permission for a particular tool. Do not dump profiles or the environment to diagnose it.
 
-Install the CLI only with user approval:
+`tb use '<profile>'` selects a saved profile; environment variables still take precedence. There is no general `--profile` flag on calls (`login --profile` names a saved profile).
+
+If `tb` is absent, the CLI package is `@tool-bridge/cli` and requires Node.js 22+. Install it when CLI setup is within the user's request; otherwise explain the missing prerequisite before making a global environment change:
 
 ```sh
 npm install -g @tool-bridge/cli
 ```
 
-The npm CLI requires Node.js 22 or newer.
+Use installed `--help` to resolve a version mismatch; do not silently upgrade as a troubleshooting step.
 
-## Discovery commands
+## Search for capabilities
 
-All commands below are scoped to what the current key can see:
+Choose the payload size for the next action:
 
 ```sh
-tb whoami --json
+# Browse candidates without downloading every argument schema.
+tb search '<keywords>' --json
+# Find a tool and prepare to call it in the same discovery round trip.
+tb search '<keywords>' --schemas --json
+```
+
+Both return a page with `items`; full results request `items[].tool.inputSchema`. Construct a call path from `items[].path` and `items[].tool.name`. Reuse returned paths verbatim: federation prefixes are already included, so do not prepend `source.path` or call a remote source URL directly. Full results can still lack optional metadata; for offline delivery, resolve missing `delivery` from command help.
+
+Search uses keyword matching, not semantic matching or automatic translation. Prefer a few distinctive words in the catalog's language. If recall is poor, revise the keywords, remove unnecessary terms, or try the other likely language. An empty page is not proof that the gateway lacks the capability.
+
+Useful refinements, selected for the task rather than added by default:
+
+```sh
+tb search '<keywords>' --path-prefix '<visible-prefix>' --effect read --schemas --json
+tb search '<keywords>' --matching all --json
+tb search '<keywords>' --federation local --json
+```
+
+- `--effect` is repeatable: `read`, `write`, `destructive`, `unknown`. Do not filter to `read` when the requested task needs a mutation.
+- `--matching best` is the default and starts with the highest matching coverage; `all` broadens results. `--min-coverage` accepts a fraction in `(0,1]`; do not combine `all` with a fraction other than `1`.
+- `--federation local|recursive` selects search scope. Gateways advertising federated search default to recursive. Keep this setting and all query/filter choices when continuing a cursor.
+- `partial: true` and `sources` describe incomplete source coverage. CLI warnings go to stderr while JSON remains on stdout. A useful hit may still be called; report the gap when the user's task requires a complete inventory.
+- Use `--limit` and the returned `--cursor` only when more results are needed. Cursors are opaque: do not edit or decode them. If a cursor is invalidated by changed state, restart the same search without it; do not reuse it with different filters.
+- Global `tb search --mode` accepts only `keyword`. A Context provider's optional semantic search is a different capability.
+
+If search is unavailable or the user wants to explore the visible tree:
+
+```sh
 tb tree --depth 2 --json
-tb tree '<path>' --depth 2 --json
-tb ls '<path>' --json
-tb search '<query>' --json
-tb help '<path>' --json
+tb ls '<visible-path>' --json
+tb help '<node-or-command-path>' --json
 ```
 
-`tb search` may be absent on gateways without a search capability. Fall back to `tree`, `ls`, and `help` rather than treating that as a gateway-wide failure.
+Start shallow and follow relevant branches. `ls --json` returns a bare children array, not a page's `items`. Node help is an index; command help supplies the selected command's complete contract. `cmds[].path` is already the full invocation path; `outputSchema` is structured while `returns` is prose. Help's `feedback`, `hint`, and `note` are top-level fields. An absent schema is not an empty schema; inspect help before inventing arguments. Unknown effect is not permission to treat the tool as read-only. Ignore unknown optional response fields for compatibility.
 
-If an exact command path, current schema, `effect: read`, and `confirm: false` are already known from the current runtime, skip discovery and call it directly. Otherwise prefer one `search --json`; when a single hit is unambiguous and contains enough schema/effect/confirm data, call it without an extra help request.
+## Arguments and output
 
-`tb search '<query>' --json` already includes each result's arguments schema at `items[].tool.inputSchema`. For human-readable output, add `--schemas` to print those same schemas inline without another request. Use command-level help when search does not expose a detail needed for the decision, the result is ambiguous, or the operation is mutating:
+Choose exactly one input form; omitting all sends `{}`:
 
 ```sh
-tb help '<node>/<command>' --json
+tb call '<path>' '{"query":"example"}' --json
+tb call '<path>' --args '{"query":"example"}' --json
+tb call '<path>' --args-file '<json-file>' --json
+tb call '<path>' --arg query=example --arg limit=10 --json
 ```
 
-Node-level help is an index; it lists the commands under a node. Request `<node>/<command>` help to obtain a single command's complete input schema. Important command fields are:
+`--args-file -` reads the JSON object from stdin. Use file/stdin for nested structures, large payloads, or sensitive values; keep temporary files outside the repository with owner-only access, and remove them when done. Preserve values through proper shell quoting; JSON encoding alone is not shell escaping.
 
-- `path`: the full command path, used verbatim as the call target
-- `name`: the command name
-- `inputSchema`: JSON Schema for the arguments object
-- `outputSchema` or `returns`: response contract when declared
-- `scope`: required permission
-- `effect`: typically `read`, `write`, or `destructive`
-- `confirm`: whether the user must confirm before the call
-- `delivery`: for device commands, the supported channels — `realtime`, `mailbox`, or `both`; absent means realtime-only
-- `feedback`: high-value operational notes from prior users
+Repeatable `--arg key=value` builds a flat object: `true`/`false`, `null`, and plain integers/decimals become typed scalars; everything else stays a string. Duplicate keys use the last value. Use JSON for arrays, nested objects, or strings that must remain exactly `"true"` or `"42"`.
 
-Unknown optional fields are forward-compatible and should be ignored.
-
-## Invocation form
-
-There is one call form. A command is a virtual leaf under its node, so `cmds[].path` is always the full command path. Pass it verbatim and send the arguments object as the request body:
-
-```sh
-tb call 'docs/search/query' --args '{"q":"tool bridge"}' --json
-tb call 'system/status/get' --json
-```
-
-Take the full path from command help's `cmds[].path`, or from a search result as the exact `<items[].path>/<items[].tool.name>` pair. Use only fields returned by the gateway; do not infer a path from the node kind or invent a command name. Identifiers in a path (each segment and the command name) are case-insensitive and normalized to lowercase.
-
-Arguments must form a JSON object. Choose exactly one of four mutually exclusive input forms; omitting all four sends `{}`:
-
-```sh
-tb call '<path>' '{"query":"tool bridge"}' --json
-tb call '<path>' --args '{"query":"tool bridge"}' --json
-tb call '<path>' --args-file '<temporary-json-file>' --json
-tb call '<path>' --arg query='tool bridge' --arg limit=10 --json
-```
-
-The first form is positional JSON after `<path>`. `--args` supplies the same object as a flag. `--args-file -` reads the entire JSON object from stdin:
-
-```sh
-printf '%s\n' '{"query":"tool bridge"}' | tb call '<path>' --args-file - --json
-```
-
-Repeated `--arg key=value` builds a flat object. It parses only `true`/`false` as booleans, `null` as null, and plain integers or decimals such as `42`, `-1`, and `1.5` as numbers; every other value remains a string. A repeated key uses its last value. Use positional JSON, `--args`, or `--args-file` for nested objects and arrays, exponent or hexadecimal notation, large integers, or strings that must remain exactly `"true"` or `"42"`.
-
-Prefer `--args-file` for long payloads. Keep sensitive temporary files outside the project and remove them when no longer needed.
-
-Do not reuse a failed write or destructive call automatically. A timeout can leave the remote outcome unknown.
-
-## Device delivery and durable operations
-
-`tb call` accepts a per-call delivery policy for device-backed commands:
-
-```sh
-tb call '<node>/<command>' --args '<json-object>' --delivery fallback --json
-tb call '<node>/<command>' --args '<json-object>' --delivery mailbox --ttl 3600 --idempotency-key '<key>' --json
-```
-
-- `--delivery` is `realtime` (default), `mailbox` (enqueue a durable operation), or `fallback` (gateway decides).
-- `--ttl <seconds>` bounds how long a queued operation stays deliverable; `--idempotency-key <key>` makes a retried enqueue reuse the same operation. Both require `--delivery mailbox` or `fallback`.
-- The command's metadata `delivery` (`realtime`/`mailbox`/`both`, absent = realtime-only) limits which policies can succeed; the flag never expands a command's capability.
-
-`fallback` semantics are owned by the gateway: for a `both` command it attempts realtime and enqueues only when the gateway can prove the call was never dispatched to the device. A completed realtime call — success or business error — never enqueues. An outcome-unknown send never enqueues either and returns `retryable: false`; do not send a manual follow-up enqueue.
-
-A `200` response carries the command result with header `x-tb-delivery: realtime`. A `202` carries the operation detail with `x-tb-delivery: mailbox`; in `--json` mode the CLI prints that operation object, in human mode it prints `queued <operationId> (queued)`.
-
-Inspect and manage operations with the `tb device` commands, scoped to the caller's visibility:
-
-```sh
-tb device ls --json
-tb device op ls '<device-id>' --state queued --json
-tb device op get '<device-id>' '<operation-id>' --json
-tb device op cancel '<device-id>' '<operation-id>' --json
-```
-
-Operation states: `queued`, `claimed`, then a terminal `succeeded`, `rejected`, `failed`, `result_unknown`, `cancelled`, or `expired`. Interpretation rules:
-
-- Cancelling a `queued` operation terminates it before execution; cancelling a `claimed` one only records the request — the device stops cooperatively, and side effects are not proven stopped.
-- `result_unknown`, and `expired` with `executionMayHaveOccurred: true`, mean the device may have executed the command without a recoverable result. Never re-enqueue or re-call on that basis alone.
-- Claiming, renewing, and completing operations are the device runtime's protocol. A calling agent reads state with `op get` at most when the current task needs it; there is no fixed polling loop in the default flow.
-
-## Store objects
-
-Deployment-level objects live in the default Store and appear in results as stable `store://default/...` URIs. Owner-scoped commands:
-
-```sh
-tb store list --json
-tb store stat 'store://default/<key>' --json
-tb store get 'store://default/<key>' --out '<local-file>'
-tb store upload '<local-file>' --json
-tb store rm 'store://default/<key>' --json
-```
-
-`tb store share 'store://default/<key>' --json` creates a short-lived revocable bearer link for an external audience; `tb store revoke-share '<share-id>'` revokes it. The share output is a secret: deliver it to the user and keep it out of logs, feedback, and generated artifacts. Persist only the `store://` URI itself.
-
-## Context writes and uploads
-
-Use `tb ctx put` for text or JSON that can be sent inline, from a UTF-8 file, or through stdin. It creates or replaces an entry and supports metadata and optimistic concurrency:
-
-```sh
-tb ctx put '<context>' '<entry>' --content '<text>' --json
-tb ctx put '<context>' '<entry>' --file '<utf8-file>' --content-type application/json --json
-```
-
-Use direct upload for binary or large file content:
-
-```sh
-tb ctx upload '<context>' '<entry>' --file '<local>' --json
-```
-
-Upload is conditional by default: an existing entry fails with `conflict`. Add `--force` only when the user has explicitly authorized replacing that exact entry. The CLI obtains a short-lived upload grant and sends the bytes directly to object storage without the Tool Bridge key. Treat the grant URL and headers as temporary bearer secrets: do not print, log, store, cache, or include them in generated artifacts or feedback.
-
-## Error handling
-
-Gateway TBError responses use `{code,message,retryable}` internally. With `--json`, the CLI emits a flat failure object to stdout and exits with status 1:
+Prefer `--json` for machine consumption. Without an explicit delivery policy, `call` prints the command's returned value, not a universal `{ok:true,data:...}` envelope. With any explicit `--delivery`, success is `{delivery:"realtime",result:...}` or `{delivery:"mailbox",operation:...}`; see [Devices](devices.md). JSON failures go to stdout with a nonzero exit; `error` is a string:
 
 ```json
 {"ok":false,"error":"failure message","code":"invalid_argument","retryable":false}
 ```
 
-`error` is the message string, not a nested error object. `code`, `retryable`, `hint`, and `feedback` are omitted when unavailable. Common codes mean:
-
-- `not_found`: the path is absent or intentionally hidden from this identity
-- `permission_denied`: the visible operation lacks a required scope
-- `invalid_argument`: re-read command-level help and compare the payload with `inputSchema`
-- `conflict`: refresh state before deciding whether to try again
-- `unavailable`: upstream or gateway capability is temporarily unavailable
-- `rate_limited`: retry only when safe, using bounded backoff
-- `internal`: report the failure without exposing request secrets
-
-When `tb call` fails with `unavailable`, `internal`, `invalid_argument`, or `rate_limited`, the CLI makes a best-effort lookup on that exact path. It may add a human-readable `hint`; when matching entries exist, JSON output also includes at most three `feedback` summaries shaped as `{id,score,title}`. This lookup can fail silently and never replaces the primary error. Treat an attached entry as the first troubleshooting branch and fetch only the most relevant detail:
-
-```sh
-tb feedback get '<path>' '<feedback-id>' --json
-```
-
-Use `tb feedback ls '<path>' --json` only when the failed call did not attach a useful entry, the path is unfamiliar or failure-prone and warrants a preflight, or a new submission needs deduplication. Do not add feedback requests to every successful read call.
-
-If a listed entry accurately explains the behavior or provides a validated workaround, it can be voted up after the requested result is secured, provided gateway writes are already authorized:
-
-```sh
-tb feedback vote '<path>' '<feedback-id>' up --json
-```
-
-Use `down` only when current runtime evidence shows that an entry is incorrect or harmful. Do not downvote merely because an entry was irrelevant to the current task.
-
-When an abnormal call reveals a new reproducible issue or a validated resolution, submit feedback after securing the requested result when gateway writes are already authorized and the lesson is genuinely reusable:
-
-```sh
-tb feedback submit '<path>' \
-  --title '<short summary>' \
-  --detail '<how to avoid or resolve the issue>' \
-  --json
-```
-
-Before submitting:
-
-1. Run `tb feedback ls '<path>' --json` again to prevent duplicates.
-2. Keep the title to one concrete symptom or lesson.
-3. State the observed condition and verified workaround in the detail.
-4. Label an unresolved report as unresolved; do not present a guess as a fix.
-5. Remove credentials, personal data, customer payloads, and internal-only URLs.
-
-Feedback submission and voting require `call` permission on the target path. If the current task does not authorize gateway writes, do not interrupt a successful result merely to request a vote or submission. Preserve or mention a draft only when it would materially help the user or an authorized operator.
+`code`, `retryable`, `hint`, and `feedback` may be absent. Diagnose with [Recovery](recovery.md). For downloads use [Data and files](data-and-files.md) so binary bytes never mix with JSON.

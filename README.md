@@ -1,6 +1,6 @@
 # Tool Bridge Agent Skill
 
-Give a coding agent access to the tools, context, and devices exposed by a [Tool Bridge](https://github.com/TokenRollAI/tool-bridge) gateway. The skill teaches the agent to discover capabilities from live `~help`, use feedback before and during troubleshooting, promptly contribute validated lessons, call the correct tool, and respect side-effect and credential boundaries.
+Give a coding agent access to the tools, context, files, and devices exposed by a [Tool Bridge](https://github.com/TokenRollAI/tool-bridge) gateway. The skill uses live contracts and the `tb` CLI to complete everyday calls, offline device work, and requested administration. Its short entrypoint loads detailed guidance only for the task at hand.
 
 ## Install
 
@@ -42,7 +42,21 @@ Use Tool Bridge to inspect the deployment status. Do not make changes.
 
 The gateway's runtime description is always authoritative; this repository does not hard-code an instance URL, credential, or tool catalog.
 
-The feedback loop is deliberate: agents read relevant feedback before a call, consult it immediately after abnormal behavior, vote on useful existing guidance, and submit new non-sensitive findings when authorized.
+The normal path is one call for a known tool, or `search --schemas --json` followed by a call for an unknown read-only capability. Broad exploration uses compact search results. Device delivery, Context and Store files, management, and failure recovery each have an on-demand reference. Feedback is consulted when it helps resolve a problem; votes and submissions require authorization.
+
+Other requests the skill can handle:
+
+```text
+Run the device's maintenance command when it is reachable, queueing it if offline. Report the operation ID without waiting.
+```
+
+```text
+Download the file identified by this store:// URI to a new local file.
+```
+
+```text
+Update this gateway setting and verify that the saved revision is actually applied.
+```
 
 ## License
 

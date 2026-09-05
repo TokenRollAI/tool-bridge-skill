@@ -1,4 +1,4 @@
 interface:
   display_name: "Tool Bridge"
-  short_description: "Discover tools and reuse gateway feedback safely"
-  default_prompt: "Use $tool-bridge to discover the right gateway tool, consult feedback, and call it safely."
+  short_description: "Use gateway tools, context, files, and offline devices"
+  default_prompt: "Use $tool-bridge to complete my task through the configured gateway, discovering only the capabilities and guidance needed."
