@@ -1,6 +1,6 @@
 ---
 name: tool-bridge
-description: Use a Tool Bridge gateway to discover and call tools, read connected context, handle Store files, and reach online or offline devices. Also use for requested gateway configuration, integrations, access management, or troubleshooting through the tb CLI. Discover instance capabilities at runtime; do not use for unrelated local tasks or developing Tool Bridge itself.
+description: Use a Tool Bridge gateway to discover and call tools, read connected context, follow or publish events, handle Store files, and reach online or offline devices. Also use for requested gateway configuration, integrations, access management, or troubleshooting through the tb CLI. Discover instance capabilities at runtime; do not use for unrelated local tasks or developing Tool Bridge itself.
 ---
 
 # Tool Bridge
@@ -15,6 +15,7 @@ Complete the user's task through the configured gateway. Prefer `tb` and the cur
 | Find a tool to use | `tb search '<keywords>' --schemas --json` | [CLI and discovery](references/cli-reference.md) for filters, pagination, or syntax |
 | Explore available capabilities | Compact `tb search '<keywords>' --json` or a shallow `tb tree` | [CLI and discovery](references/cli-reference.md) |
 | Reach a device, queue work, or inspect an operation | The same `tb call`, with an appropriate delivery policy | [Devices](references/devices.md) |
+| Follow a topic, wait for one event, or publish | `tb sub`, `tb wait`, or `tb pub` | [Events and cursors](references/cli-reference.md#events-and-cursors) |
 | Read/write context, retrieve a file, or use a skillhub | `tb ctx`, `tb store`, or `tb skill` | [Data and files](references/data-and-files.md) |
 | Configure or administer the gateway, or connect a device | The relevant management command family | [Management](references/management.md) |
 | Recover from a failed or surprising call | Inspect the error and attached hints | [Recovery and feedback](references/recovery.md) |

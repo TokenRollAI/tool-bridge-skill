@@ -75,3 +75,7 @@ tb device op cancel '<device-id>' '<operation-id>' --json
 Listings are paginated. Cancelling a queued operation prevents its handler from starting; cancelling a claimed one is cooperative and can leave it claimed with `cancelRequestedAt`. Report cancellation requested until terminal evidence establishes more.
 
 Current limitations matter to task selection: caller SK revocation does not itself cancel already authorized operations; use the operation cancellation workflow. Mailbox handlers do not receive realtime call-scoped Store upload capability, so do not promise that a realtime file-producing command will produce the same artifact offline without a supporting runtime contract.
+
+## Follow a bound process
+
+Use the full process-session path advertised by the device. `tb device session run <path> --follow` starts a new command, prints its recovery handle on stderr, and returns the remote exit status. Ctrl-C detaches the observer. Use `tb device session wait <path> <session-id>` to recover the exit status on the original daemon. If starting a command returned an uncertain outcome, find it by its request ID before considering another start. Restarting the device daemon invalidates its old session handles.

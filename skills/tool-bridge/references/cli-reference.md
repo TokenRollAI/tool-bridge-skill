@@ -65,6 +65,14 @@ tb help '<node-or-command-path>' --json
 
 Start shallow and follow relevant branches. `ls --json` returns a bare children array, not a page's `items`. Node help is an index; command help supplies the selected command's complete contract. `cmds[].path` is already the full invocation path; `outputSchema` is structured while `returns` is prose. Help's `feedback`, `hint`, and `note` are top-level fields. An absent schema is not an empty schema; inspect help before inventing arguments. Unknown effect is not permission to treat the tool as read-only. Ignore unknown optional response fields for compatibility.
 
+If the search response reports `index_capacity`, use path-specific tree or help to check the part of the registry you need. An empty partial result cannot establish that a tool is absent.
+
+## Events and cursors
+
+Check the topic's live help and the local CLI syntax. `tb wait <topic> --type <type> --timeout 30s` waits for one matching event. `tb sub <topic>` streams successive events. Both start at the current tail unless you pass `--after <cursor>`. Resume with the same topic and type filter. Wait exits 2 on timeout and 3 on a history gap. Report a gap to a caller who needs a complete history. Once the caller accepts partial history, resume with the earliest available cursor returned by the gateway.
+
+Publish an authorized event with `tb pub <topic> --type <type> --data-file <json-file> --idempotency-key <key>`. On an uncertain response reuse the same key and identical input. A topic bound to an external event source accepts verified source deliveries. When the caller needs an existing process's exit status, use the device session handle to observe it.
+
 ## Arguments and output
 
 Choose exactly one input form; omitting all sends `{}`:
