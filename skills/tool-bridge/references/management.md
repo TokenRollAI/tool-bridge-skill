@@ -83,6 +83,12 @@ For a remote gateway, `server add --remote-url` is the upstream address and `--s
 
 Creating SKs or completing setup may return a secret once. Arrange protected delivery before running the command so captured tool output does not place the key in the conversation. An empty/unrestricted scope is not a convenient default.
 
+## Installing and updating a plugin
+
+Use `tb plugin install <source> --secret-ref <name>` for an HTTPS release manifest, an exact npm package version or a GitHub Release with a Tool Bridge manifest. For a hosted npm or GitHub release, include the approved HTTPS `--origin`. Container releases require a deployment runner that approves the image digest. Installation registers the provider. Mount the requested export with `tb integration add` before handing its tree path to the caller.
+
+For upgrades, run `tb plugin preview <id> [source] --json` and review changed exports and visible mounts. Use the matching source and `tb plugin upgrade <id> [source] --digest <candidateDigest>` to apply the reviewed candidate. A conflict requires a fresh preview. For an authorized rollback, bind `tb plugin rollback <id> --digest <previous.digest>` to the intended release. Verify the result against an existing mount.
+
 ## Setup, deployment, and maintenance
 
 - Setup/recovery uses local pairing, not a working Admin SK. Inspect `tb setup status`; `tb setup pair --directory '<bootstrap-directory>'` requires the local deployment host and admin utility. Use `--recovery` for an initialized instance. Protected token/config files feed the corresponding setup command; only one input can consume stdin.
@@ -91,6 +97,8 @@ Creating SKs or completing setup may return a secret once. Arrange protected del
 - Use `tb maintenance` for database/Redis changes and `tb keys` for encryption/signing roots. Read the exact schema, revision, instance identity, and recovery prerequisites. These are not ordinary config updates. Never clear maintenance protection or delete runtime records to bypass a refusal.
 - Key rotation can require resuming a re-encryption job; verify completion before retiring old roots. Signing rotation with `--revoke-existing` invalidates existing grants and requires that effect to be within scope. `tb keys backup --out '<new-protected-file>'` writes an owner-only secret file; it is not a full PG/S3 backup.
 - After a maintenance timeout, inspect state before further mutation. Unknown commit state or missing recovery prerequisites requires stopping with the specific unresolved condition, not an automatic retry.
+
+Redis changes require all other gateway replicas to drain first. Align their Redis connection settings with the newly applied configuration before rejoining them.
 
 ## Connect a local device
 
